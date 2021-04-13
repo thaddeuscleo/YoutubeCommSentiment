@@ -48,4 +48,6 @@ if __name__ == "__main__":
     id = userInsertLink()
     data = fetchData(id)
     comments = getComment(data)
-    print(comments)
+
+    for c in comments:
+        print(f"Comment:\n{c}\n\n")
