@@ -1,14 +1,11 @@
 import os
-
 import googleapiclient.discovery
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def main():
-    # Disable OAuthlib's HTTPS verification when running locally.
-    # *DO NOT* leave this option enabled in production.
+def fetchData(id):
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
     api_service_name = "youtube"
@@ -20,13 +17,35 @@ def main():
 
     request = youtube.commentThreads().list(
         part="snippet",
-        # parentId="UgzDE2tasfmrYLyNkGt4AaABAg"
-        videoId="Z2ol5_qmvsg"
+        videoId=id
     )
     response = request.execute()
+    return response
 
-    print(response)
+
+def getComment(data):
+    comments = data["items"]
+    data = []
+    for snip in comments:
+        data.append(snip["snippet"]["topLevelComment"]
+                    ["snippet"]["textOriginal"])
+    return data
+
+
+def userInsertLink():
+    id = ""
+    while(True):
+        try:
+            link = input("Insert Youtube Link: ")
+            id = link.split("https://www.youtube.com/watch?v=")[1]
+            break
+        except:
+            print("[!] Invalid Video Link")
+    return id
 
 
 if __name__ == "__main__":
-    main()
+    id = userInsertLink()
+    data = fetchData(id)
+    comments = getComment(data)
+    print(comments)
