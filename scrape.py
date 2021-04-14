@@ -1,99 +1,78 @@
-import os
+import io
 import re
 import csv
 import sys
-import json
 import time
 
-from googleapiclient import discovery
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-def get_video_id(video_url):
-    result = re.search('https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?.*v=|youtu\.be\/)([\w-]+)', video_url)
-    return result.group(1) if result else None
+from progress.bar import Bar
 
-def run_comment_scraper(video_id, amount):
-    with open('config.json') as config_file:
-        config = json.load(config_file)
+def is_youtube_video_url(video_url):
+    match = re.match('https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?.*v=|youtu\.be\/)(?:[\w-]+)', video_url)
+    return True if match else False
 
-    client = discovery.build('youtube', 'v3', developerKey=config['API_KEY'])
+def run_comment_scraper(video_url, scroll_count):
+    driver = webdriver.Chrome('/usr/bin/chromedriver')
+    driver.get(video_url)
+    driver.maximize_window()
+    time.sleep(5)
+    
+    title = driver.find_element_by_xpath('//*[@id="container"]/h1/yt-formatted-string').text
+    comment_section = driver.find_element_by_xpath('//*[@id="comments"]')
 
-    with open('data.csv', 'w') as data_file:
-        writer = csv.writer(data_file)
+    print('[+] Scrolling to comment section')
 
-        writer.writerow([
-            'id',
-            'text_original',
-            'author_display_name',
-            'author_channel_id',
-            'like_count',
-            'published_at',
-            'updated_at',
-            'total_reply_count',
-            'is_public'
-        ])
+    driver.execute_script("arguments[0].scrollIntoView();", comment_section)
+    time.sleep(7)
 
-        total_count = 0
-        next_page_token = ''
+    bar = Bar('[+] Scrolling comments', max=scroll_count)
 
-        while total_count < amount:
-            amount_left = amount - total_count
-            max_results = 20 if amount_left > 20 else amount_left
+    last_height = driver.execute_script("return document.documentElement.scrollHeight")
+    
+    for i in range(scroll_count):
+        driver.execute_script("window.scrollTo(0, document.documentElement.scrollHeight);")
+        time.sleep(2)
+        bar.next()
 
-            response = client.commentThreads().list(
-                part='snippet',
-                videoId=video_id,
-                maxResults=max_results,
-                pageToken=next_page_token,
-                textFormat='plainText'
-            ).execute()
+        new_height = driver.execute_script("return document.documentElement.scrollHeight")
+        if new_height == last_height:
+            break
+        last_height = new_height
 
-            current_count = len(response['items'])
-            #reported_count = response['pageInfo']['totalResults']
+    driver.execute_script("window.scrollTo(0, document.documentElement.scrollHeight);")
+    bar.finish()
 
-            total_count = total_count + current_count
+    username_elems = driver.find_elements_by_xpath('//*[@id="author-text"]')
+    comment_elems = driver.find_elements_by_xpath('//*[@id="content-text"]')
 
-            print(f'[+] Scraped {current_count} comment(s)') # (API reported {reported_count})')
+    print(f'[+] Saving results into results.csv ...')
 
-            for item in response['items']:
-                snippet = item['snippet']
-                comment = snippet['topLevelComment']
+    with io.open('results.csv', 'w', newline='', encoding="utf-16") as file:
+        writer = csv.writer(file, delimiter =",", quoting=csv.QUOTE_ALL)
+        writer.writerow(["Username", "Comment"])
 
-                comment_snippet = comment['snippet']
+        for username, comment in zip(username_elems, comment_elems):
+            writer.writerow([username.text, comment.text])
 
-                writer.writerow([
-                    comment['id'],
-                    comment_snippet['textOriginal'],
-                    comment_snippet['authorDisplayName'],
-                    comment_snippet['authorChannelId']['value'],
-                    comment_snippet['likeCount'],
-                    comment_snippet['publishedAt'],
-                    comment_snippet['updatedAt'],
-                    snippet['totalReplyCount'],
-                    snippet['isPublic']
-                ])
-            
-            if 'nextPageToken' in response:
-                next_page_token = response['nextPageToken']
-                time.sleep(5)
-            else:
-                print('[-] Warning: nextPageToken not reported by the API. Waiting...')
-                next_page_token = ''
-                time.sleep(10)
+    print(f'[+] Finished, a total of {len(comment_elems)} comment(s) were scraped')
 
-        print(f'[+] Finished, a total of {total_count} comment(s) were scraped')
+    driver.close()
 
 if __name__ == '__main__':  
     if len(sys.argv) != 3:
-        print(f'[-] Usage: {sys.argv[0]} [amount to scrape] [video id/url]')
-    elif not os.path.isfile('config.json'):
-        print('[-] config.json is missing')
+        print(f'[+] Usage: {sys.argv[0]} [video id/url] [scroll count]')
     else:
-        amount = int(sys.argv[1])
-        video_id = get_video_id(sys.argv[2])
+        video_url    = sys.argv[1]
+        scroll_count = int(sys.argv[2])
 
-        if not video_id:
+        if not is_youtube_video_url(video_url):
             print('[-] Invalid video url')
-        elif amount < 1:
-            print('[-] Invalid amount')
+        elif scroll_count < 1:
+            print('[-] Invalid scroll count')
         else:
-            run_comment_scraper(video_id, amount)
+            run_comment_scraper(video_url, scroll_count)
