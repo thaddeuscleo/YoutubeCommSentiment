@@ -3,6 +3,7 @@ import googleapiclient.discovery
 import csv
 from dotenv import load_dotenv
 import re
+from deep_translator import GoogleTranslator
 
 load_dotenv()
 
@@ -38,6 +39,12 @@ def remove_emoji(text):
     return regex_pattern.sub(r'', text)
 
 
+def to_english(text):
+    translation = GoogleTranslator(source='auto', target='en').translate(text)
+    print(translation)
+    return translation
+
+
 def get_comment(collected_data):
     comments_list = collected_data["items"]
     com_list = []
@@ -46,6 +53,7 @@ def get_comment(collected_data):
             "username": snip["snippet"]["topLevelComment"]["snippet"]["authorDisplayName"],
             "comment": snip["snippet"]["topLevelComment"]["snippet"]["textOriginal"]
         }
+        user_comment["comment"] = to_english(user_comment["comment"])
         com_list.append(user_comment)
     return com_list
 
